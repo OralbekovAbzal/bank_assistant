@@ -1,6 +1,9 @@
 from fastapi import FastAPI,HTTPException, Depends
-from pydantic import BaseModel,Field
-from main import create_user,new_conversation, check_login, create_access_token, get_current_user, get_conversation, ask_gemini, save_turn
+from pydantic import BaseModel
+from app.users import create_user
+from app.chat import get_conversation, new_conversation, save_turn
+from app.gemini import ask_gemini
+from app.auth import check_login, create_access_token, get_current_user
 
 class New_user(BaseModel):
     phone: str

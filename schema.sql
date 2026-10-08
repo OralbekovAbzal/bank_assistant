@@ -25,16 +25,16 @@ create table transactions (
     constraint has_account check (orig_id is not null or dest_id is not null)
 );
 
+create table conversations (
+    id bigserial primary key, 
+    user_id bigint references users(id) not null,
+    last_interaction_id text
+);
+
 create table messages (
     id bigserial primary key, 
     conversation_id bigint references conversations(id) not null, 
     role text check (role in ('model','user')),
     content text not null, 
     created_at timestamptz not null default now()
-);
-
-create table conversations (
-    id bigserial primary key, 
-    user_id bigint references users(id) not null,
-    last_interaction_id text
 );
