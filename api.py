@@ -1,6 +1,6 @@
 from fastapi import FastAPI,HTTPException, Depends
 from pydantic import BaseModel,Field
-from main import create_user,new_conversation, check_login, create_access_token, get_current_user
+from main import create_user,new_conversation, check_login, create_access_token, get_current_user, get_conversation, ask_gemini, save_turn
 
 class New_user(BaseModel):
     phone: str
@@ -12,7 +12,7 @@ class Login_user(BaseModel):
     password: str
 
 class Chat_data(BaseModel):
-    conv_id: int = Field(ge=0)
+    conv_id: int | None = None
     message: str
 
 app = FastAPI()
@@ -22,15 +22,30 @@ def registration(user: New_user):
     data = user.model_dump()
     return create_user(data)
 
-@app.get("/chat")
+@app.post("/chat")
 def chat(body: Chat_data, user_id: int = Depends(get_current_user)):
-    return user_id
-    
+    data = body.model_dump()
+    conv_id = data["conv_id"]
+    message = data["message"]
+    if conv_id == None:
+        conv_id = new_conversation(user_id)
+    prev_id = get_conversation(conv_id,user_id)
+    try:
+        new_id, answer = ask_gemini(message, prev_id)
+    except Exception as e:
+        print("Gemini error:", e)
+        raise HTTPException(status_code=504,detail="Ассистент не ответил, попробуйте ещё раз")
+    save_turn(new_id, message, conv_id, user_id, answer)
+    return {"conv_id": conv_id ,"answer": answer}
 
 @app.post("/login")
 def login(user: Login_user):
     data = user.model_dump()
     res = check_login(data)
     if res == 0:
-        return "login or password is invalid"
-    return create_access_token(res)
+        raise HTTPException(401,"Login or password is invalid!")
+    json = {
+        "access_token": create_access_token(res),
+        "token_type": "bearer"
+    }
+    return json

@@ -9,7 +9,9 @@ from fastapi import Depends, HTTPException
 import os
 from dotenv import load_dotenv
 
-conn = psycopg.connect(dbname = "bank_assistant", host = "localhost", user = "admin", password = os.getenv("DB_PASSWORD"), port = "5433")
+load_dotenv()
+
+conn = psycopg.connect(dbname = "bank_assistant", host = "localhost", user = "admin", password = os.getenv("DB_PASSWORD"), port = "5433", autocommit=True)
 
 client = genai.Client(
     api_key=os.getenv("GEMINI_API_KEY"),
@@ -30,28 +32,18 @@ def create_user(user_data: dict):
         conn.commit()
         return "success"
 
-def check_login(user_data: dict):
+def check_login(user_data: dict) -> int:
     with conn.cursor() as cur:
         cur.execute("select password_hash from users where phone = %s",(user_data["phone"],))
-        hashed_pass = cur.fetchone()[0]
+        row = cur.fetchone()
+        if row is None:
+            return 0
+        hashed_pass = row[0]
         password_hash = PasswordHash.recommended()
         if password_hash.verify(user_data["password"],hashed_pass):
             cur.execute("select id from users where phone = %s",(user_data["phone"],))
             return cur.fetchone()[0]
         return 0
-
-def ask() -> None:
-    prev_itr = None
-    print("Write your question")
-    while True:
-        message = input()
-        interaction = client.interactions.create(
-            model="gemini-2.5-flash",
-            input=message,
-            previous_interaction_id=prev_itr,
-        )
-        prev_itr = interaction.id
-        print("Bot:", interaction.output_text)
 
 def create_account(user_id: int) -> None:
     with conn.cursor() as cur:
@@ -93,3 +85,26 @@ def get_current_user(creds: HTTPAuthorizationCredentials = Depends(bearer)) -> i
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
     return int(payload["sub"])
+
+def get_conversation(conv_id: int, user_id: int) -> str:
+    with conn.cursor() as cur:
+        cur.execute("select last_interaction_id from conversations where id = %s and user_id = %s",(conv_id,user_id,))
+        last_itr_id = cur.fetchone()
+    if last_itr_id is None:
+        raise HTTPException(status_code=404, detail="Invalid data")
+    return last_itr_id[0]
+
+def ask_gemini(message: str, prev_id: str) -> tuple:
+    interaction = client.interactions.create(
+        model="gemini-2.5-flash",
+        input=message,
+        previous_interaction_id=prev_id,
+    )
+    return (interaction.id, interaction.output_text)
+
+def save_turn(last_itr_id: str, message: str, conv_id: int, user_id: int, output_text: str) -> None:
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute("insert into messages (conversation_id,role,content) values (%s,%s,%s)", (conv_id, "user", message))
+            cur.execute("insert into messages (conversation_id,role,content) values (%s,%s,%s)", (conv_id, "model", output_text))
+            cur.execute("update conversations set last_interaction_id = %s where id = %s and user_id = %s", (last_itr_id, conv_id, user_id))

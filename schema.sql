@@ -36,5 +36,5 @@ create table messages (
 create table conversations (
     id bigserial primary key, 
     user_id bigint references users(id) not null,
-    last_interaction_id bigint
+    last_interaction_id text
 );
