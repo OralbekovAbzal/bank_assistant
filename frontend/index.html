@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qazna Bank — ассистент</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --text: #1d2129; --muted: #6b7280;
+    --border: #e3e5e8; --accent: #0f766e; --accent-text: #ffffff;
+    --bubble-user: #0f766e; --bubble-user-text: #ffffff;
+    --bubble-bot: #eef0f2; --bubble-bot-text: #1d2129; --error: #b42318;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111315; --panel: #1a1d20; --text: #e7e9ea; --muted: #9aa0a6;
+      --border: #2c3034; --accent: #2dd4bf; --accent-text: #0b1513;
+      --bubble-user: #115e59; --bubble-user-text: #ecfeff;
+      --bubble-bot: #24282c; --bubble-bot-text: #e7e9ea; --error: #f97066;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; justify-content: center;
+  }
+  .app { width: 100%; max-width: 720px; height: 100%; display: flex; flex-direction: column; padding: 16px; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 4px 0 12px; }
+  header h1 { font-size: 18px; margin: 0; }
+  header .actions { display: flex; gap: 8px; }
+  button {
+    font: inherit; border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    padding: 8px 14px; border-radius: 10px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  input, textarea {
+    font: inherit; color: var(--text); background: var(--panel);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; width: 100%;
+  }
+  input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 24px; margin: auto 0; }
+  .card h2 { margin: 0 0 16px; font-size: 18px; }
+  .card form { display: flex; flex-direction: column; gap: 10px; }
+  .card .switch { margin-top: 14px; color: var(--muted); font-size: 14px; }
+  .card .switch a { color: var(--accent); cursor: pointer; }
+  .msg-error { color: var(--error); font-size: 14px; min-height: 20px; }
+  .msg-ok { color: var(--accent); font-size: 14px; }
+
+  #chat { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--panel);
+          border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+  #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .bubble { max-width: 85%; padding: 10px 14px; border-radius: 14px; word-wrap: break-word; }
+  .bubble.user { align-self: flex-end; background: var(--bubble-user); color: var(--bubble-user-text); border-bottom-right-radius: 4px; }
+  .bubble.bot { align-self: flex-start; background: var(--bubble-bot); color: var(--bubble-bot-text); border-bottom-left-radius: 4px; }
+  .bubble.error { align-self: center; background: transparent; color: var(--error); font-size: 14px; }
+  .bubble ul { margin: 4px 0; padding-left: 20px; }
+  .empty { margin: auto; color: var(--muted); text-align: center; }
+  .typing { color: var(--muted); font-style: italic; }
+  #composer { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border); }
+  #composer textarea { resize: none; height: 44px; max-height: 140px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Qazna Bank · ассистент</h1>
+    <div class="actions hidden" id="chat-actions">
+      <button id="new-chat">Новый диалог</button>
+      <button id="logout">Выйти</button>
+    </div>
+  </header>
+
+  <!-- Вход -->
+  <div class="card" id="login-view">
+    <h2>Вход</h2>
+    <form id="login-form">
+      <input name="phone" placeholder="Телефон, например +77010000001" autocomplete="username" required>
+      <input name="password" type="password" placeholder="Пароль" autocomplete="current-password" required>
+      <div class="msg-error" id="login-error"></div>
+      <button class="primary" type="submit">Войти</button>
+    </form>
+    <div class="switch">Нет аккаунта? <a id="to-register">Зарегистрироваться</a></div>
+  </div>
+
+  <!-- Регистрация -->
+  <div class="card hidden" id="register-view">
+    <h2>Регистрация</h2>
+    <form id="register-form">
+      <input name="name" placeholder="Имя" required>
+      <input name="phone" placeholder="Телефон" autocomplete="username" required>
+      <input name="password" type="password" placeholder="Пароль" autocomplete="new-password" required>
+      <div class="msg-error" id="register-error"></div>
+      <button class="primary" type="submit">Зарегистрироваться</button>
+    </form>
+    <div class="switch">Уже есть аккаунт? <a id="to-login">Войти</a></div>
+  </div>
+
+  <!-- Чат -->
+  <div id="chat" class="hidden">
+    <div id="messages"></div>
+    <form id="composer">
+      <textarea id="input" placeholder="Напишите сообщение…" rows="1"></textarea>
+      <button class="primary" type="submit" id="send">Отправить</button>
+    </form>
+  </div>
+</div>
+
+<script>
+// Адрес API. Если страница открыта через сам FastAPI (/ui), подходит пустая строка.
+const API = "";
+
+// Состояние: токен живёт в sessionStorage (пропадёт при закрытии вкладки), conv_id — в памяти.
+let token = sessionStorage.getItem("token");
+let convId = null;
+
+const $ = (id) => document.getElementById(id);
+
+function show(view) {
+  for (const v of ["login-view", "register-view", "chat"]) $(v).classList.toggle("hidden", v !== view);
+  $("chat-actions").classList.toggle("hidden", view !== "chat");
+  if (view === "chat") $("input").focus();
+}
+
+// Достаёт понятный текст ошибки из ответа FastAPI.
+async function errorText(res) {
+  try {
+    const data = await res.json();
+    if (typeof data.detail === "string") return data.detail;
+    if (Array.isArray(data.detail)) return "Проверьте правильность заполнения полей";
+  } catch (_) {}
+  return `Ошибка ${res.status}`;
+}
+
+async function post(path, body, auth = false) {
+  const headers = { "Content-Type": "application/json" };
+  if (auth) headers["Authorization"] = `Bearer ${token}`;
+  return fetch(API + path, { method: "POST", headers, body: JSON.stringify(body) });
+}
+
+// ---------- Вход и регистрация ----------
+
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = new FormData(e.target);
+  $("login-error").textContent = "";
+  const res = await post("/login", { phone: form.get("phone"), password: form.get("password") });
+  if (!res.ok) { $("login-error").textContent = await errorText(res); return; }
+  const data = await res.json();
+  token = data.access_token;
+  sessionStorage.setItem("token", token);
+  e.target.reset();
+  startNewChat();
+  show("chat");
+});
+
+$("register-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = new FormData(e.target);
+  $("register-error").textContent = "";
+  const res = await post("/registration", {
+    name: form.get("name"), phone: form.get("phone"), password: form.get("password"),
+  });
+  if (!res.ok) { $("register-error").textContent = await errorText(res); return; }
+  const data = await res.json();
+  if (data !== "success") { $("register-error").textContent = data; return; }
+  e.target.reset();
+  show("login-view");
+  $("login-error").innerHTML = '<span class="msg-ok">Готово! Теперь войдите.</span>';
+});
+
+$("to-register").onclick = () => show("register-view");
+$("to-login").onclick = () => show("login-view");
+
+$("logout").onclick = () => {
+  token = null;
+  sessionStorage.removeItem("token");
+  show("login-view");
+};
+
+// ---------- Чат ----------
+
+function startNewChat() {
+  convId = null;
+  $("messages").innerHTML = '<div class="empty" id="empty">Спросите, например:<br>«Сколько у меня денег?» или «На что я тратил в последнее время?»</div>';
+}
+$("new-chat").onclick = startNewChat;
+
+// Простой рендер ответа модели: экранируем HTML, потом **жирный**, списки и переносы строк.
+function render(text) {
+  const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const lines = esc.split("\n");
+  let html = "", inList = false;
+  for (const line of lines) {
+    const item = line.match(/^\s*[*-]\s+(.*)$/);
+    if (item) {
+      if (!inList) { html += "<ul>"; inList = true; }
+      html += `<li>${item[1]}</li>`;
+      continue;
+    }
+    if (inList) { html += "</ul>"; inList = false; }
+    html += line + "<br>";
+  }
+  if (inList) html += "</ul>";
+  return html.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(<br>)+$/, "");
+}
+
+function addBubble(kind, text) {
+  $("empty")?.remove();
+  const div = document.createElement("div");
+  div.className = `bubble ${kind}`;
+  if (kind === "bot") div.innerHTML = render(text);
+  else div.textContent = text;
+  $("messages").appendChild(div);
+  $("messages").scrollTop = $("messages").scrollHeight;
+  return div;
+}
+
+async function send() {
+  const text = $("input").value.trim();
+  if (!text) return;
+  $("input").value = "";
+  addBubble("user", text);
+  $("send").disabled = true;
+  const typing = addBubble("bot typing", "");
+  typing.textContent = "Ассистент печатает…";
+
+  try {
+    const res = await post("/chat", { conv_id: convId, message: text }, true);
+    typing.remove();
+    if (res.status === 401 || res.status === 403) {
+      addBubble("error", "Сессия истекла, войдите снова.");
+      token = null; sessionStorage.removeItem("token");
+      setTimeout(() => show("login-view"), 1200);
+      return;
+    }
+    if (!res.ok) { addBubble("error", await errorText(res)); return; }
+    const data = await res.json();
+    convId = data.conv_id;
+    addBubble("bot", data.answer || "(пустой ответ)");
+  } catch (err) {
+    typing.remove();
+    addBubble("error", "Сервер недоступен. Он запущен?");
+  } finally {
+    $("send").disabled = false;
+    $("input").focus();
+  }
+}
+
+$("composer").addEventListener("submit", (e) => { e.preventDefault(); send(); });
+// Enter — отправить, Shift+Enter — новая строка.
+$("input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+// При загрузке: если токен уже есть, сразу в чат.
+if (token) { startNewChat(); show("chat"); } else { show("login-view"); }
+</script>
+</body>
+</html>

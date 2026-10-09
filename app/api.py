@@ -4,6 +4,7 @@ from app.users import create_user
 from app.chat import get_conversation, new_conversation, save_turn
 from app.gemini import ask_gemini
 from app.auth import check_login, create_access_token, get_current_user
+from fastapi.staticfiles import StaticFiles
 
 class New_user(BaseModel):
     phone: str
@@ -19,6 +20,7 @@ class Chat_data(BaseModel):
     message: str
 
 app = FastAPI()
+app.mount("/ui", StaticFiles(directory="frontend", html=True), name="ui")
 
 @app.post("/registration")
 def registration(user: New_user):

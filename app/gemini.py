@@ -5,6 +5,7 @@ from google import genai
 from google.genai import types
 from app.accounts import get_accounts
 from app.transactions import get_transactions
+from datetime import date
 
 load_dotenv()
 
@@ -71,6 +72,14 @@ get_transactions_tool = {
                     "Сколько последних операций вернуть, от 1 до 50. "
                     "Если клиент не назвал число, не передавай параметр — вернётся 10."
                 )
+            },
+            "date_from": {
+                "type": "string",
+                "description": ("Начальная дата в формате ГГГГ-ММ-ДД, включительно. Необязательно.")
+            },
+            "date_to": {
+                "type": "string",
+                "description": ("Конечная дата в формате ГГГГ-ММ-ДД, включительно. Необязательно.")
             }
         },
     },
@@ -83,17 +92,17 @@ tools = {
 
 client = genai.Client(
     api_key=os.getenv("GEMINI_API_KEY"),
-    http_options=types.HttpOptions(timeout=30000)
+    http_options=types.HttpOptions(timeout=40000)
 )
 
-gemini_tools = (get_transactions_tool, get_accounts_tool)
+gemini_tools = [get_transactions_tool, get_accounts_tool]
 
 def ask_gemini(message: str, prev_id: str, user_id: int) -> tuple:
     interaction = client.interactions.create(
         model="gemini-3.5-flash",
         input=message,
         previous_interaction_id=prev_id,
-        system_instruction=SYSTEM_PROMPT,
+        system_instruction=SYSTEM_PROMPT + f"Сегодня: {date.today().isoformat()}",
         tools=gemini_tools
     )
 
@@ -112,7 +121,7 @@ def ask_gemini(message: str, prev_id: str, user_id: int) -> tuple:
                     model="gemini-3.5-flash",
                     input=[data],
                     previous_interaction_id=previous_interaction_id,
-                    system_instruction=SYSTEM_PROMPT,
+                    system_instruction=SYSTEM_PROMPT + f"Сегодня: {date.today().isoformat()}",
                     tools=gemini_tools
             )
             break
