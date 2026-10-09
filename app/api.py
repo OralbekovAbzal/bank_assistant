@@ -34,7 +34,7 @@ def chat(body: Chat_data, user_id: int = Depends(get_current_user)):
         conv_id = new_conversation(user_id)
     prev_id = get_conversation(conv_id,user_id)
     try:
-        new_id, answer = ask_gemini(message, prev_id)
+        new_id, answer = ask_gemini(message, prev_id, user_id)
     except Exception as e:
         print("Gemini error:", e)
         raise HTTPException(status_code=504,detail="Ассистент не ответил, попробуйте ещё раз")
