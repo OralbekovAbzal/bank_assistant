@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from app.accounts import get_accounts
+from app.transactions import get_transactions
 
 load_dotenv()
 
@@ -47,12 +48,45 @@ get_accounts_tool = {
     },
 }
 
-tools = {"get_accounts": get_accounts}
+get_transactions_tool = {
+    "type": "function",
+    "name": "get_transactions",
+    "description": (
+        "Возвращает последние операции текущего клиента по всем его счетам, "
+        "от самых новых к старым. Для каждой операции: id операции, номер счёта (account_id), "
+        "направление (came — деньги пришли на счёт, gone — ушли со счёта), "
+        "тип (transfer, payment, withdrawal, deposit, refund, fee), сумма в тенге, "
+        "описание и дата. Перевод между двумя счетами клиента приходит двумя записями "
+        "с одинаковым id: gone с одного счёта и came на другой — это перевод самому себе, "
+        "а не расход. "
+        "Вызывай, когда клиент спрашивает про последние операции, траты, поступления, "
+        "откуда пришли деньги или на что он их потратил."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "limit": {
+                "type": "integer",
+                "description": (
+                    "Сколько последних операций вернуть, от 1 до 50. "
+                    "Если клиент не назвал число, не передавай параметр — вернётся 10."
+                )
+            }
+        },
+    },
+}
+
+tools = {
+    "get_accounts": get_accounts,
+    "get_transactions": get_transactions
+    }
 
 client = genai.Client(
     api_key=os.getenv("GEMINI_API_KEY"),
     http_options=types.HttpOptions(timeout=30000)
 )
+
+gemini_tools = (get_transactions_tool, get_accounts_tool)
 
 def ask_gemini(message: str, prev_id: str, user_id: int) -> tuple:
     interaction = client.interactions.create(
@@ -60,13 +94,13 @@ def ask_gemini(message: str, prev_id: str, user_id: int) -> tuple:
         input=message,
         previous_interaction_id=prev_id,
         system_instruction=SYSTEM_PROMPT,
-        tools=[get_accounts_tool]
+        tools=gemini_tools
     )
 
     for step in interaction.steps:
         if step.type == "function_call":
             func = tools[step.name]
-            result = func(user_id)
+            result = func(user_id, **step.arguments)
             previous_interaction_id = interaction.id
             data = {
                 "type": "function_result",
@@ -79,7 +113,7 @@ def ask_gemini(message: str, prev_id: str, user_id: int) -> tuple:
                     input=[data],
                     previous_interaction_id=previous_interaction_id,
                     system_instruction=SYSTEM_PROMPT,
-                    tools=[get_accounts_tool]
+                    tools=gemini_tools
             )
             break
     return (interaction.id, interaction.output_text)
