@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from app.accounts import get_accounts
-from app.transactions import get_transactions
+from app.transactions import get_transactions, get_spending_summary
 from datetime import date
 
 load_dotenv()
@@ -85,9 +85,36 @@ get_transactions_tool = {
     },
 }
 
+get_spending_summary_tool = {
+    "type": "function",
+    "name": "get_spending_summary",
+    "description": "Возвращает сводку РАСХОДОВ текущего клиента за период, сгруппированную по описанию "
+        "операции (магазин, услуга, получатель перевода): для каждой группы — описание и общая "
+        "сумма в тенге, от самой большой к самой маленькой. Учитываются только деньги, которые "
+        "ушли от клиента: оплаты, снятия наличных, комиссии и переводы другим людям. "
+        "Поступления и переводы между своими счетами не входят. "
+        "Вызывай, когда клиент спрашивает, сколько он потратил, на что уходит больше всего денег, "
+        "сколько ушло на конкретный магазин или категорию. "
+        "Суммы уже посчитаны — не складывай их сам из get_transactions.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "date_from": {
+                "type": "string",
+                "description": ("Начальная дата в формате ГГГГ-ММ-ДД, включительно. Необязательно. Если поле пустое то автоматически будет указана дата на год раньше")
+            },
+            "date_to": {
+                "type": "string",
+                "description": ("Конечная дата в формате ГГГГ-ММ-ДД, включительно. Необязательно.")
+            }
+        },
+    },
+}
+
 tools = {
     "get_accounts": get_accounts,
-    "get_transactions": get_transactions
+    "get_transactions": get_transactions,
+    "get_spending_summary": get_spending_summary
     }
 
 client = genai.Client(
@@ -95,7 +122,7 @@ client = genai.Client(
     http_options=types.HttpOptions(timeout=40000)
 )
 
-gemini_tools = [get_transactions_tool, get_accounts_tool]
+gemini_tools = [get_transactions_tool, get_accounts_tool, get_spending_summary_tool]
 
 def ask_gemini(message: str, prev_id: str, user_id: int) -> tuple:
     interaction = client.interactions.create(
@@ -115,7 +142,7 @@ def ask_gemini(message: str, prev_id: str, user_id: int) -> tuple:
                 "type": "function_result",
                 "name": step.name,
                 "call_id": step.id,
-                "result": [{"type": "text", "text": json.dumps(result)}]
+                "result": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]
             }
             interaction = client.interactions.create(
                     model="gemini-3.5-flash",
