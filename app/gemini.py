@@ -133,23 +133,35 @@ def ask_gemini(message: str, prev_id: str, user_id: int) -> tuple:
         tools=gemini_tools
     )
 
-    for step in interaction.steps:
-        if step.type == "function_call":
-            func = tools[step.name]
-            result = func(user_id, **step.arguments)
-            previous_interaction_id = interaction.id
-            data = {
-                "type": "function_result",
-                "name": step.name,
-                "call_id": step.id,
-                "result": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]
-            }
+    for _ in range(5):
+        data = []
+        for step in interaction.steps:
+            if step.type == "function_call":
+                if step.name not in tools:
+                    result = {"error": f"unknown function {step.name}"}
+    
+                else:
+                    try:
+                        func = tools[step.name]
+                        result = func(user_id, **step.arguments)
+                    except Exception as e:
+                        print("Tool error: ", step.name,e)
+                        result = {"error": "function failed"}
+                        
+                data.append({
+                    "type": "function_result",
+                    "name": step.name,
+                    "call_id": step.id,
+                    "result": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]
+                })
+        if data:
             interaction = client.interactions.create(
-                    model="gemini-3.5-flash",
-                    input=[data],
-                    previous_interaction_id=previous_interaction_id,
-                    system_instruction=SYSTEM_PROMPT + f"Сегодня: {date.today().isoformat()}",
-                    tools=gemini_tools
+                model="gemini-3.5-flash",
+                input=data,
+                previous_interaction_id=interaction.id,
+                system_instruction=SYSTEM_PROMPT + f"Сегодня: {date.today().isoformat()}",
+                tools=gemini_tools
             )
+        else:
             break
     return (interaction.id, interaction.output_text)
