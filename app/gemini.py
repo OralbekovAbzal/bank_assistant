@@ -156,7 +156,7 @@ def ask_gemini(message: str, prev_id: str, user_id: int) -> tuple:
                 })
         if data:
             interaction = client.interactions.create(
-                model="gemini-3.5-flash",
+                model="gemini-3.5-flash-lite",
                 input=data,
                 previous_interaction_id=interaction.id,
                 system_instruction=SYSTEM_PROMPT + f"Сегодня: {date.today().isoformat()}",
